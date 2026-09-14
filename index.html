@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="google" content="notranslate">
-<title>MBG Voice Gateway V8.1</title>
+<title>MBG Voice Gateway V8.2</title>
 <style>
   html,body{
     margin:0;
@@ -22,10 +22,10 @@
   }
   #gateway{
     width:100%;
-    max-width:280px;
-    min-height:86px;
+    max-width:360px;
+    min-height:92px;
     box-sizing:border-box;
-    padding:12px 14px;
+    padding:18px 20px;
     background:#fff;
     border:1px solid #d9e2ef;
     border-radius:14px;
@@ -34,7 +34,7 @@
   .row{
     display:flex;
     align-items:center;
-    gap:9px;
+    gap:12px;
   }
   .mic{
     width:34px;
@@ -45,7 +45,7 @@
     justify-content:center;
     background:#294da4;
     color:#fff;
-    font-size:15px;
+    font-size:17px;
     flex:0 0 auto;
   }
   .dot{
@@ -65,9 +65,9 @@
   }
   #hint{
     margin-top:5px;
-    padding-left:39px;
+    padding-left:48px;
     color:#64748b;
-    font-size:10px;
+    font-size:11px;
     line-height:1.35;
   }
   @keyframes pulse{
@@ -96,8 +96,6 @@
   let autoSendDone = false;
   let finalTranscript = '';
   let finishTimer = null;
-  let restartTimer = null;
-  let startTimer = null;
 
   function setStatus(status, hint) {
     statusEl.textContent = status || '';
@@ -109,9 +107,7 @@
   }
 
   function closeGateway() {
-    clearTimeout(restartTimer);
     clearTimeout(finishTimer);
-    clearTimeout(startTimer);
     setTimeout(() => {
       try { window.close(); } catch (e) {}
     }, 100);
@@ -160,7 +156,7 @@
 
     const r = new SR();
     r.lang = 'id-ID';
-    r.continuous = true;
+    r.continuous = false;
     r.interimResults = true;
     r.maxAlternatives = 1;
 
@@ -224,7 +220,10 @@
       }
 
       if (!autoSendDone && hasOpener()) {
-        setStatus('Siap mendengar lagi', 'Silakan buka microphone kembali');
+        setStatus('Tidak ada suara', 'Sesi selesai. Tekan microphone MBG untuk pertanyaan berikutnya');
+        setTimeout(() => {
+          if (!autoSendDone) closeGateway();
+        }, 700);
       }
     };
 
@@ -243,7 +242,8 @@
     }
   }
 
-  // MBG V7 membuka gateway lalu mengirim sinyal mulai.
+  // MBG V8.2 membuka gateway lalu mengirim sinyal mulai.
+  // Setiap popup = satu pertanyaan. Tidak ada auto-restart setelah sesi selesai.
   window.addEventListener('message', (event) => {
     if (!event.data || event.data.type !== 'MBG_VOICE_START') return;
     startListening();
@@ -252,9 +252,9 @@
   if (!hasOpener()) {
     setStatus('Gateway siap', 'Buka melalui tombol microphone MBG');
   } else {
-    // Coba mulai otomatis; jika browser menolak tanpa gesture,
-    // pesan MBG_VOICE_START tetap menjadi jalur utama.
-    startTimer = setTimeout(startListening, 180);
+    // Mulai otomatis untuk sesi ini. Jika browser menolak tanpa gesture,
+    // sinyal MBG_VOICE_START tetap menjadi jalur utama.
+    setTimeout(startListening, 180);
   }
 })();
 </script>
