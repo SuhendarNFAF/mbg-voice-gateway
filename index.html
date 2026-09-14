@@ -1,35 +1,30 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" translate="no">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MBG SPPG - Voice Gateway V4</title>
+<meta name="google" content="notranslate">
+<title>MBG SPPG Voice Gateway</title>
 <style>
-*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Arial,sans-serif;background:#f4f7fb;color:#1f2d3d;display:flex;align-items:center;justify-content:center;padding:16px}
-.card{width:min(430px,100%);background:#fff;border:1px solid #dfe6ef;border-radius:18px;box-shadow:0 12px 35px rgba(0,0,0,.08);overflow:hidden}
-.head{padding:18px 20px;background:#eef4ff;border-bottom:1px solid #dfe6ef}.head h1{margin:0 0 4px;font-size:21px}.head p{margin:0;color:#607087;font-size:13px}.body{padding:20px}
-.status{padding:11px 13px;border-radius:10px;background:#f5f7fa;margin-bottom:14px;font-size:13px;line-height:1.45}.status.ok{background:#eaf8ef}.status.err{background:#fff0f0}
-textarea{width:100%;min-height:105px;resize:vertical;border:1px solid #cfd8e5;border-radius:12px;padding:12px;font-size:16px;outline:none}
-.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}button{border:0;border-radius:10px;padding:11px 14px;font-size:14px;cursor:pointer}
-.primary{background:#23449a;color:white}.secondary{background:#e9eef7;color:#20304a}.danger{background:#fbe7e7;color:#8a2222}.success{background:#2f7d4a;color:white}button:disabled{opacity:.5;cursor:not-allowed}
-.note{margin-top:13px;color:#607087;font-size:12px;line-height:1.5}
+html,body{margin:0;padding:0;background:transparent}
+body{font-family:Arial,sans-serif}
+.card{
+  width:1px;height:1px;overflow:hidden;
+  position:fixed;left:-10000px;top:-10000px;
+  opacity:0;pointer-events:none;
+}
 </style>
 </head>
-<body>
-<main class="card">
-<header class="head"><h1>🎙️ MBG SPPG — Voice Gateway V4</h1><p>Voice → teks → AI Assistant MBG</p></header>
-<section class="body">
-<div id="status" class="status">Menyiapkan Voice Gateway...</div>
-<textarea id="transcript" placeholder="Hasil suara akan muncul di sini. Anda dapat mengeditnya sebelum dikirim."></textarea>
-<div class="actions">
-<button id="startBtn" class="primary">🎙 Mulai Bicara</button>
-<button id="stopBtn" class="danger" disabled>■ Berhenti</button>
-<button id="sendBtn" class="success">➤ Kirim ke AI</button>
-<button id="clearBtn" class="secondary">↻ Bersihkan</button>
-</div>
-<div class="note">Gateway ini di-host pada HTTPS terpisah agar microphone dapat digunakan. Gateway tidak menerima authToken MBG. Setelah dikirim, teks diteruskan ke jendela AI Assistant melalui <code>postMessage</code>.</div>
-</section>
+<body translate="no">
+<main class="card" aria-hidden="true">
+  <div id="status">Menyiapkan microphone...</div>
+  <textarea id="transcript"></textarea>
+  <button id="startBtn">Mulai Bicara</button>
+  <button id="stopBtn" disabled>Berhenti</button>
+  <button id="sendBtn">Kirim ke AI</button>
+  <button id="clearBtn">Bersihkan</button>
 </main>
+
 <script>
 (() => {
   const transcriptEl = document.getElementById('transcript');
@@ -45,27 +40,27 @@ textarea{width:100%;min-height:105px;resize:vertical;border:1px solid #cfd8e5;bo
   let manuallyStopped = false;
   let autoSendDone = false;
   let finalTranscript = '';
+  let lastResultAt = 0;
+  let finishTimer = null;
 
-  function status(text, type) {
+  function status(text) {
     statusEl.textContent = String(text || '');
-    statusEl.className = 'status ' + (type || '');
   }
 
   function openerOK() {
     return !!(window.opener && !window.opener.closed);
   }
 
+  function closeGatewaySoon() {
+    setTimeout(() => {
+      try { window.close(); } catch (e) {}
+    }, 120);
+  }
+
   function sendToMBG(text) {
-    const clean = String(text || '').trim();
-    if (!clean) {
-      status('Tidak ada pertanyaan yang dapat dikirim.', 'err');
-      return false;
-    }
-    if (!openerOK()) {
-      status('Jendela AI Assistant MBG tidak ditemukan. Buka voice dari AI Assistant.', 'err');
-      return false;
-    }
-    if (autoSendDone) return true;
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!clean || autoSendDone || !openerOK()) return false;
+
     autoSendDone = true;
 
     const payload = {
@@ -78,24 +73,42 @@ textarea{width:100%;min-height:105px;resize:vertical;border:1px solid #cfd8e5;bo
 
     try {
       window.opener.postMessage(payload, '*');
-      status('Pertanyaan diteruskan ke AI Assistant. Jendela ini akan ditutup.', 'ok');
-      sendBtn.disabled = true;
-      setTimeout(() => { try { window.close(); } catch (e) {} }, 250);
+      closeGatewaySoon();
       return true;
     } catch (e) {
       autoSendDone = false;
-      status('Gagal meneruskan pertanyaan ke AI Assistant MBG.', 'err');
       return false;
     }
   }
 
+  function finishListeningAndSend() {
+    if (autoSendDone) return;
+
+    const text = (finalTranscript || transcriptEl.value || '').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+
+    if (recognition && isListening) {
+      manuallyStopped = true;
+      try { recognition.stop(); } catch (e) {}
+    }
+
+    // Kirim langsung jika recognition sudah berhenti; onend juga akan menangani.
+    if (!isListening && autoMode) sendToMBG(text);
+  }
+
+  function scheduleFinish() {
+    clearTimeout(finishTimer);
+    // Speech Recognition kadang memecah satu kalimat menjadi beberapa final result.
+    // Tunggu sebentar setelah hasil terakhir agar seluruh pertanyaan terkumpul.
+    finishTimer = setTimeout(() => {
+      if (!isListening || autoSendDone || manuallyStopped) return;
+      finishListeningAndSend();
+    }, 1200);
+  }
+
   function buildRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      status('Browser ini tidak mendukung Speech Recognition. Gunakan Chrome/Edge.', 'err');
-      startBtn.disabled = true;
-      return null;
-    }
+    if (!SR) return null;
 
     const r = new SR();
     r.lang = 'id-ID';
@@ -109,48 +122,62 @@ textarea{width:100%;min-height:105px;resize:vertical;border:1px solid #cfd8e5;bo
       autoSendDone = false;
       finalTranscript = '';
       transcriptEl.value = '';
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      status('Mendengarkan... silakan ucapkan pertanyaan Anda.', '');
+      lastResultAt = Date.now();
     };
 
     r.onresult = (event) => {
       let interim = '';
+
       for (let i = event.resultIndex || 0; i < event.results.length; i++) {
         const result = event.results[i];
-        const text = result && result[0] ? String(result[0].transcript || '') : '';
-        if (result.isFinal) finalTranscript += (finalTranscript ? ' ' : '') + text.trim();
-        else interim += text;
+        const text = result && result[0]
+          ? String(result[0].transcript || '').trim()
+          : '';
+
+        if (!text) continue;
+
+        if (result.isFinal) {
+          finalTranscript += (finalTranscript ? ' ' : '') + text;
+        } else {
+          interim += (interim ? ' ' : '') + text;
+        }
       }
-      const combined = (finalTranscript + (interim ? ' ' + interim : '')).trim();
+
+      const combined = (finalTranscript + (interim ? ' ' + interim : ''))
+        .replace(/\s+/g, ' ')
+        .trim();
+
       if (combined) {
         transcriptEl.value = combined;
-        status('Mendengar suara... jangan khawatir, saya menunggu sampai kalimat selesai.', '');
+        lastResultAt = Date.now();
+        scheduleFinish();
       }
     };
 
     r.onerror = (e) => {
-      const messages = {
-        'not-allowed': 'Izin microphone ditolak. Izinkan microphone untuk Voice Gateway.',
-        'service-not-allowed': 'Layanan Speech Recognition tidak diizinkan.',
-        'no-speech': 'Tidak ada suara yang terdeteksi.',
-        'audio-capture': 'Microphone tidak ditemukan atau sedang digunakan aplikasi lain.',
-        'network': 'Speech Recognition mengalami masalah jaringan.'
-      };
-      status(messages[e.error] || ('Speech Recognition error: ' + e.error), 'err');
+      if (e && e.error === 'no-speech') {
+        // Jangan menutup session hanya karena satu no-speech event.
+        return;
+      }
+      if (e && (e.error === 'not-allowed' || e.error === 'service-not-allowed')) {
+        status('Izin microphone diperlukan.');
+      }
     };
 
     r.onend = () => {
       isListening = false;
       startBtn.disabled = false;
       stopBtn.disabled = true;
+      clearTimeout(finishTimer);
 
-      const text = (finalTranscript || transcriptEl.value || '').trim();
-      if (autoMode && !manuallyStopped && text && !autoSendDone) {
-        status('Transkripsi selesai. Mengirim otomatis ke AI...', 'ok');
-        setTimeout(() => sendToMBG(text), 150);
-      } else if (manuallyStopped && text && !autoSendDone) {
-        status('Transkripsi selesai. Silakan periksa teks atau klik Kirim ke AI.', 'ok');
+      const text = (finalTranscript || transcriptEl.value || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      // Mode normal: satu pertanyaan = satu session.
+      // Setelah recognition benar-benar selesai, langsung kirim.
+      if (autoMode && !autoSendDone && text) {
+        sendToMBG(text);
       }
     };
 
@@ -162,29 +189,41 @@ textarea{width:100%;min-height:105px;resize:vertical;border:1px solid #cfd8e5;bo
     manuallyStopped = false;
     autoSendDone = false;
     finalTranscript = '';
+    transcriptEl.value = '';
+
     if (!recognition) recognition = buildRecognition();
     if (!recognition) return;
+
     try {
       recognition.start();
-    } catch (e) {
-      status('Microphone siap. Jika belum mulai otomatis, klik "Mulai Bicara".', 'err');
-    }
+    } catch (e) {}
   }
 
   startBtn.onclick = () => startListening(false);
 
   stopBtn.onclick = () => {
     manuallyStopped = true;
-    try { if (recognition && isListening) recognition.stop(); } catch (e) {}
+    clearTimeout(finishTimer);
+    try {
+      if (recognition && isListening) recognition.stop();
+    } catch (e) {}
   };
 
-  sendBtn.onclick = () => sendToMBG(transcriptEl.value.trim());
+  sendBtn.onclick = () => {
+    clearTimeout(finishTimer);
+    const text = transcriptEl.value.trim();
+    if (recognition && isListening) {
+      manuallyStopped = true;
+      try { recognition.stop(); } catch (e) {}
+    }
+    sendToMBG(text);
+  };
 
   clearBtn.onclick = () => {
-    autoSendDone = false;
+    clearTimeout(finishTimer);
     finalTranscript = '';
     transcriptEl.value = '';
-    status(openerOK() ? 'Siap menerima suara.' : 'Buka gateway dari AI Assistant MBG.', openerOK() ? '' : 'err');
+    autoSendDone = false;
   };
 
   window.addEventListener('message', (event) => {
@@ -194,11 +233,8 @@ textarea{width:100%;min-height:105px;resize:vertical;border:1px solid #cfd8e5;bo
 
   recognition = buildRecognition();
 
-  if (!openerOK()) {
-    status('Gateway ini sebaiknya dibuka dari tombol microphone AI Assistant MBG.', 'err');
-  } else {
-    status('Menyiapkan microphone...', '');
-    setTimeout(() => startListening(true), 350);
+  if (openerOK()) {
+    setTimeout(() => startListening(true), 250);
   }
 })();
 </script>
