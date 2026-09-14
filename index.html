@@ -2,47 +2,89 @@
 <html lang="id" translate="no">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="google" content="notranslate">
-<title>MBG Voice Gateway</title>
+<title>MBG Voice Gateway V7</title>
 <style>
-html,body{margin:0;padding:0;background:transparent}
-body{font-family:Arial,sans-serif}
-#gateway{
-  width:220px;
-  min-height:74px;
-  box-sizing:border-box;
-  margin:0;
-  padding:14px 16px;
-  background:#fff;
-  border:1px solid #dbe3ef;
-  border-radius:12px;
-  box-shadow:0 8px 28px rgba(0,0,0,.16);
-  color:#1f2d3d;
-}
-.row{display:flex;align-items:center;gap:10px}
-.dot{
-  width:12px;height:12px;border-radius:50%;
-  background:#3157ad;
-  flex:0 0 auto;
-  animation:pulse 1.2s infinite;
-}
-#status{font-size:14px;line-height:1.35}
-#hint{margin-top:6px;color:#64748b;font-size:11px}
-@keyframes pulse{
-  0%,100%{transform:scale(.85);opacity:.55}
-  50%{transform:scale(1.12);opacity:1}
-}
+  html,body{
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    background:#f7f9fc;
+    overflow:hidden;
+    font-family:Arial,sans-serif;
+  }
+  body{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  #gateway{
+    width:100%;
+    max-width:360px;
+    min-height:92px;
+    box-sizing:border-box;
+    padding:18px 20px;
+    background:#fff;
+    border:1px solid #d9e2ef;
+    border-radius:14px;
+    box-shadow:0 6px 22px rgba(0,0,0,.12);
+  }
+  .row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .mic{
+    width:34px;
+    height:34px;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:#294da4;
+    color:#fff;
+    font-size:17px;
+    flex:0 0 auto;
+  }
+  .dot{
+    width:9px;
+    height:9px;
+    border-radius:50%;
+    background:#2f6fed;
+    margin-left:2px;
+    animation:pulse 1.1s infinite;
+    flex:0 0 auto;
+  }
+  #status{
+    font-size:14px;
+    font-weight:600;
+    color:#1f2d3d;
+    line-height:1.3;
+  }
+  #hint{
+    margin-top:5px;
+    padding-left:48px;
+    color:#64748b;
+    font-size:11px;
+    line-height:1.35;
+  }
+  @keyframes pulse{
+    0%,100%{opacity:.45;transform:scale(.85)}
+    50%{opacity:1;transform:scale(1.15)}
+  }
 </style>
 </head>
 <body translate="no">
-<div id="gateway" aria-live="polite">
-  <div class="row">
-    <span class="dot"></span>
-    <span id="status">Mendengarkan...</span>
-  </div>
-  <div id="hint">Silakan bicara</div>
-</div>
+  <main id="gateway" aria-live="polite">
+    <div class="row">
+      <span class="mic" aria-hidden="true">🎙️</span>
+      <span class="dot" aria-hidden="true"></span>
+      <span id="status">Menyiapkan...</span>
+    </div>
+    <div id="hint">Silakan bicara</div>
+  </main>
 
 <script>
 (() => {
@@ -54,11 +96,11 @@ body{font-family:Arial,sans-serif}
   let autoSendDone = false;
   let finalTranscript = '';
   let finishTimer = null;
-  let lastText = '';
+  let restartTimer = null;
 
-  function setStatus(text, hint) {
-    statusEl.textContent = String(text || '');
-    hintEl.textContent = String(hint || '');
+  function setStatus(status, hint) {
+    statusEl.textContent = status || '';
+    hintEl.textContent = hint || '';
   }
 
   function hasOpener() {
@@ -66,26 +108,25 @@ body{font-family:Arial,sans-serif}
   }
 
   function closeGateway() {
+    clearTimeout(restartTimer);
+    clearTimeout(finishTimer);
     setTimeout(() => {
       try { window.close(); } catch (e) {}
-    }, 80);
+    }, 100);
   }
 
   function sendToMBG(text) {
     const clean = String(text || '').replace(/\s+/g, ' ').trim();
     if (!clean || autoSendDone || !hasOpener()) return false;
-    if (clean === lastText) return false;
 
     autoSendDone = true;
-    lastText = clean;
-
     try {
       window.opener.postMessage({
-        type:'MBG_VOICE_TRANSCRIPT',
-        source:'voice',
-        text:clean,
-        language:'id-ID',
-        createdAt:new Date().toISOString()
+        type: 'MBG_VOICE_TRANSCRIPT',
+        source: 'voice',
+        text: clean,
+        language: 'id-ID',
+        createdAt: new Date().toISOString()
       }, '*');
 
       setStatus('Pertanyaan diterima', 'Mengirim ke AI...');
@@ -97,21 +138,21 @@ body{font-family:Arial,sans-serif}
     }
   }
 
-  function scheduleFinish() {
+  function scheduleStop() {
     clearTimeout(finishTimer);
     finishTimer = setTimeout(() => {
       if (!isListening || autoSendDone) return;
-      const text = finalTranscript.trim();
-      if (!text) return;
-
-      try { recognition.stop(); } catch (e) {}
-    }, 1300);
+      if (finalTranscript.trim()) {
+        try { recognition.stop(); } catch (e) {}
+      }
+    }, 1100);
   }
 
   function createRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
     if (!SR) {
-      setStatus('Browser tidak mendukung voice', 'Gunakan Chrome/Edge');
+      setStatus('Voice tidak didukung', 'Gunakan Chrome atau Edge');
       return null;
     }
 
@@ -123,7 +164,6 @@ body{font-family:Arial,sans-serif}
 
     r.onstart = () => {
       isListening = true;
-      autoSendDone = false;
       finalTranscript = '';
       setStatus('Mendengarkan...', 'Silakan bicara');
     };
@@ -133,10 +173,9 @@ body{font-family:Arial,sans-serif}
 
       for (let i = event.resultIndex || 0; i < event.results.length; i++) {
         const result = event.results[i];
-        const text = result && result[0]
-          ? String(result[0].transcript || '').trim()
-          : '';
+        if (!result || !result[0]) continue;
 
+        const text = String(result[0].transcript || '').trim();
         if (!text) continue;
 
         if (result.isFinal) {
@@ -152,7 +191,7 @@ body{font-family:Arial,sans-serif}
 
       if (combined) {
         setStatus('Mendengar...', combined);
-        scheduleFinish();
+        scheduleStop();
       }
     };
 
@@ -160,7 +199,6 @@ body{font-family:Arial,sans-serif}
       const err = event && event.error;
 
       if (err === 'no-speech') {
-        // Beri kesempatan recognition untuk tetap aktif.
         return;
       }
 
@@ -184,10 +222,10 @@ body{font-family:Arial,sans-serif}
       }
 
       if (!autoSendDone && hasOpener()) {
-        setStatus('Menunggu suara...', 'Silakan bicara');
-        // Jangan auto-restart terlalu agresif.
-        setTimeout(() => {
-          if (!autoSendDone && !isListening && hasOpener()) startListening();
+        setStatus('Mendengarkan...', 'Silakan bicara');
+        clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          if (!autoSendDone && !isListening) startListening();
         }, 250);
       }
     };
@@ -202,19 +240,22 @@ body{font-family:Arial,sans-serif}
 
     try {
       recognition.start();
-    } catch (e) {}
+    } catch (e) {
+      // Browser dapat melempar InvalidStateError jika start dipanggil terlalu cepat.
+    }
   }
 
+  // MBG V7 membuka gateway lalu mengirim sinyal mulai.
   window.addEventListener('message', (event) => {
     if (!event.data || event.data.type !== 'MBG_VOICE_START') return;
-    if (!recognition) recognition = createRecognition();
     startListening();
   });
 
   if (!hasOpener()) {
-    setStatus('Gateway siap', 'Buka dari tombol microphone MBG');
+    setStatus('Gateway siap', 'Buka melalui tombol microphone MBG');
   } else {
-    // Dibuka oleh MBG: langsung mencoba mendengar.
+    // Coba mulai otomatis; jika browser menolak tanpa gesture,
+    // pesan MBG_VOICE_START tetap menjadi jalur utama.
     setTimeout(startListening, 180);
   }
 })();
