@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="google" content="notranslate">
-<title>MBG Voice Gateway V8.2.1</title>
+<title>MBG Voice Gateway V8.2.2</title>
 <style>
   html,body{
     margin:0;
@@ -77,6 +77,7 @@
 </style>
 </head>
 <body translate="no">
+  <!-- MBG Voice Gateway V8.2.2 -->
   <main id="gateway" aria-live="polite" role="button" tabindex="0" title="Klik untuk mulai mendengar">
     <div class="row">
       <span class="mic" aria-hidden="true">🎙️</span>
@@ -222,10 +223,13 @@
       }
 
       if (!autoSendDone && hasOpener()) {
-        setStatus('Tidak ada suara', 'Sesi selesai. Tekan microphone MBG untuk pertanyaan berikutnya');
+        // Sesi tanpa transcript dianggap selesai dan gateway ditutup.
+        // Jangan meninggalkan status "Sesi selesai" yang dapat terlihat
+        // seperti sesi masih aktif untuk pertanyaan berikutnya.
+        setStatus('Menutup sesi...', 'Silakan gunakan tombol microphone MBG untuk pertanyaan berikutnya');
         setTimeout(() => {
           if (!autoSendDone) closeGateway();
-        }, 700);
+        }, 150);
       }
     };
 
