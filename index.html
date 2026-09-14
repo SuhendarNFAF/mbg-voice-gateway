@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="google" content="notranslate">
-<title>MBG Voice Gateway V8.2</title>
+<title>MBG Voice Gateway V8.2.1</title>
 <style>
   html,body{
     margin:0;
@@ -77,7 +77,7 @@
 </style>
 </head>
 <body translate="no">
-  <main id="gateway" aria-live="polite">
+  <main id="gateway" aria-live="polite" role="button" tabindex="0" title="Klik untuk mulai mendengar">
     <div class="row">
       <span class="mic" aria-hidden="true">🎙️</span>
       <span class="dot" aria-hidden="true"></span>
@@ -96,6 +96,7 @@
   let autoSendDone = false;
   let finalTranscript = '';
   let finishTimer = null;
+  let startAttempted = false;
 
   function setStatus(status, hint) {
     statusEl.textContent = status || '';
@@ -197,15 +198,16 @@
       const err = event && event.error;
 
       if (err === 'no-speech') {
+        setStatus('Tidak terdengar suara', 'Klik kotak ini untuk mencoba lagi');
         return;
       }
 
       if (err === 'not-allowed' || err === 'service-not-allowed') {
-        setStatus('Microphone perlu izin', 'Izinkan microphone di browser');
+        setStatus('Microphone perlu izin', 'Izinkan microphone di browser, lalu klik kotak ini');
         return;
       }
 
-      setStatus('Voice tidak dapat digunakan', 'Silakan coba lagi');
+      setStatus('Voice tidak dapat digunakan', 'Klik kotak ini untuk mencoba lagi');
     };
 
     r.onend = () => {
@@ -231,14 +233,15 @@
   }
 
   function startListening() {
-    if (autoSendDone) return;
+    if (autoSendDone || isListening) return;
+    startAttempted = true;
     if (!recognition) recognition = createRecognition();
     if (!recognition) return;
 
     try {
       recognition.start();
     } catch (e) {
-      // Browser dapat melempar InvalidStateError jika start dipanggil terlalu cepat.
+      setStatus('Siap mendengar', 'Klik kotak ini untuk mulai berbicara');
     }
   }
 
@@ -249,12 +252,37 @@
     startListening();
   });
 
+  function manualStart() {
+    if (!hasOpener()) {
+      setStatus('Gateway siap', 'Buka melalui tombol microphone MBG');
+      return;
+    }
+    startListening();
+  }
+
+  document.getElementById('gateway').addEventListener('click', manualStart);
+  document.getElementById('gateway').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      manualStart();
+    }
+  });
+
   if (!hasOpener()) {
     setStatus('Gateway siap', 'Buka melalui tombol microphone MBG');
   } else {
-    // Mulai otomatis untuk sesi ini. Jika browser menolak tanpa gesture,
-    // sinyal MBG_VOICE_START tetap menjadi jalur utama.
-    setTimeout(startListening, 180);
+    // Coba otomatis sekali. Jika browser menolak karena popup bukan gesture
+    // microphone, seluruh kartu menjadi tombol fallback.
+    setTimeout(() => {
+      if (!isListening && !autoSendDone) {
+        startListening();
+        setTimeout(() => {
+          if (!isListening && !autoSendDone) {
+            setStatus('Siap mendengar', 'Klik kotak ini untuk mulai berbicara');
+          }
+        }, 900);
+      }
+    }, 120);
   }
 })();
 </script>
